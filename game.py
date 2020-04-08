@@ -1,16 +1,25 @@
 import os
 import random
+import copy
 
 #rule -렌주룰
 #흑, 백 중 흑이 먼저 시작
 #흑만 33, 44, 장목 금지
 #금지된 수를 놓으면서 5가 만들어지는 것은 승리
 #백은 장목 허용
+from pprint import pprint
 
-SIZE = 19
+import sys
+
+SIZE = 3
 
 class Board:
     b = [[0 for x in range(SIZE)] for y in range(SIZE)] #board
+    # b = [
+    #     [-1, 1, 0],
+    #     [0, 0, 0],
+    #     [0, 1, 0]
+    # ]
     # b = [
     #     [0, 0, 0, 0, 0, 0, 0, 0],
     #     [0, 0, 0, 0, -1, 0, 0, 0],
@@ -149,22 +158,27 @@ class Board:
         for i in range(SIZE):
             for j in range(SIZE):
                 if Board.is_empty(c(i,j)):
-                    Board.bs[i][j] = False
+                    Board.bs[i][j] = True
                 else:
-                    a = Board.is_acceptable(c(i,j),1)
-                    b = Board.is_acceptable(c(i,j),-1)
-                    if a and b:
-                        Board.bs[i][j] = True
-                    elif a:
-                        Board.bs[i][j] = 1
-                    elif b:
-                        Board.bs[i][j] = -1
-                    else:
-                        assert True
+                    Board.bs[i][j] = False
+                    # a = Board.is_acceptable(c(i,j),1)
+                    # b = Board.is_acceptable(c(i,j),-1)
+                    # if a and b:
+                    #     Board.bs[i][j] = True
+                    # elif a:
+                    #     Board.bs[i][j] = 1
+                    # elif b:
+                    #     Board.bs[i][j] = -1
+                    # else:
+                    #     assert True
 
     @staticmethod
     def get_allowable_pos_board():
         return Board.bs
+
+    @staticmethod
+    def get_board():
+        return Board.b
 
     @staticmethod
     def goal_test_pos(pos):
@@ -181,11 +195,9 @@ class Board:
                         next = next + dir
                     else:
                         break
-            if len[0] + len[1] - 1 == 5:
+            if len[0] + len[1] - 1 == 3:
                 return player
         return False
-
-
 
 class c:
     # def __init__(self, tuple):
@@ -249,19 +261,162 @@ def get_input():
     x, y = index_to_num(player_move[0]), index_to_num(player_move[1])
     return c(x, y)
 
-def ai(allowable_board):
-    return c(random.randrange(0,SIZE), random.randrange(0,SIZE))
+class node:
+    def __init__(self, board):
+        self.board = board
+        self.children = list()
 
-def get_winner():
-    pass
+    def input(self, c, player_turn):
+        (x, y) = c.tuplize()
+        self.board[x][y] = player_turn
+
+    def goal_test_pos(self, pos):
+        (x, y) = pos.tuplize()
+        player = self.board[x][y]
+        # if player == 0:
+        #     return False #돌이 있는 곳만 체크
+        for d in (c(1,0), c(0,1), c(1,1), c(-1,1)):
+            #print(f"방향:{d}")
+            len = [1, 1]
+            for i, dir in enumerate((d, -d)):
+                next = pos + dir
+                while True:
+                    (x, y) = next.tuplize()
+                    if (0 <= x < SIZE) and (0 <= y < SIZE) and self.board[x][y] == player:
+                        #print(f"\t({x},{y}) 연결 확인, len[{i}] = {len[i]}")
+                        len[i] += 1
+                        next = next + dir
+                    else:
+                        #print(f"\t({x},{y}) 끊어짐 확인, len[{i}] = {len[i]}")
+                        break
+            #print(f"방향:{d} 연결된 길이:{len[0]+len[1]-1}")
+            if len[0] + len[1] - 1 == 3:
+                return player
+        return False
+
+    def print_board(self):
+        print(' ',end='')
+        print(" ".join(map(num_to_index, range(SIZE))))
+        for i in range(SIZE):
+            print(num_to_index(i), end='')
+            for j in range(SIZE):
+                print(draw_cell(self.board[i][j]), end=' ')
+            print()
+        print()  # empty line
+
+    def get_board(self):
+        return self.board
+    #def is_acceptable
+
+def minimax_descision(allowable_board, player_turn): #returns best action c(n,m) for player(player_turn)
+    argmax = c(0,0)
+    INF = 987654321
+    max_t = -INF
+    is_available_pos = False
+    for i in range(SIZE):
+        for j in range(SIZE):
+            if allowable_board[i][j] == True or allowable_board[i][j] == player_turn:
+                is_available_pos = True
+                child = node(copy.deepcopy(Board.get_board()))
+                child.input(c(i,j), player_turn)
+                min_val = min_value(child, c(i,j), -INF, INF, player_turn, 0)
+                if min_val > max_t:
+                    max_t = min_val
+                    argmax = c(i,j)
+    if not is_available_pos:
+        print("GAME END! There is no available position.")
+        print("press any key to quit..")
+        input()
+        sys.exit()
+    return argmax
+
+    #for 가능한 모든 액션에 대해
+    #   MIN_VALUE실행
+    #   MIN_VALUE가 MAX보다 크면 MAX, ARGMAX 갱신
+    #리턴 ARGMAX
+
+def max_value(state, last_input, a, b, player_turn, depth): #returns utility 값 #가장 큰 min을 찾음 (내가 둘 차례)
+    # print(f"Searching.. max_value(state, last_input: {last_input}, alpha: {a}, beta: {b}, depth: {depth})")
+    # state.print_board()
+    #assert state.goal_test_pos(last_input) == False or state.goal_test_pos(last_input) == -player_turn
+    if state.goal_test_pos(last_input) != False: #이미 승리 상태 (마지막에 둔 수(상대의 수)가 승리조건달성)
+        #print(f"***********************Player {player_turn} win***********************")
+        return -9999 #플레이어 턴?
+    INF = 987654321
+    v = -INF
+    is_available_pos = False
+    for i in range(SIZE):
+        for j in range(SIZE):
+            if state.board[i][j] == 0: #acceptable조건은 나중에 확인
+                is_available_pos = True
+                child = node(copy.deepcopy(state.get_board())) #copy 필요?
+                child.input(c(i,j),player_turn)
+                state.children.append(child)
+                v = max(v, min_value(child,c(i,j),a,b,player_turn,depth+1))
+    if not is_available_pos: #Terminal state 체크: 화면이 꽉 찼는지
+        #raise Exception
+        #print(f"***********************Draw***********************")
+        return 0
+    return v
+    #만약 보드가 terminal state 이면 utility 리턴 (승리 1 패배 -1)
+    #v = -INF
+    #for 가능한 액션에 대해
+    #   v = max(v, MIN_VALUE(board에 액션 수행한 보드,a,b))
+    #   if v >= b then return v #b = beta = MIN 경로에서 현재까지 발견한 최선의 선택 (값이 가장 작은 선택)
+    #   a = max(a,v)
+    #return v
+
+def min_value(state, last_input, a, b, player_turn, depth): #returns utility 값 #가장 작은 max를 찾음 (상대가 둘 차례)
+    # print(f"Searching.. min_value(state, last_input: {last_input}, alpha: {a}, beta: {b}, depth: {depth})")
+    # state.print_board()
+    #assert state.goal_test_pos(last_input) == False or state.goal_test_pos(last_input) == player_turn
+    if state.goal_test_pos(last_input) != False:
+        #print(f"***********************Player {player_turn} win***********************")
+        return 9999 #플레이어 턴?
+    INF = 987654321
+    v = INF
+    is_available_pos = False
+    for i in range(SIZE):
+        for j in range(SIZE):
+            if state.board[i][j] == 0:
+                is_available_pos = True
+                child = node(copy.deepcopy(state.get_board()))
+                child.input(c(i,j),-player_turn)
+                state.children.append(child)
+                v = min(v, max_value(child,c(i,j),a,b,player_turn,depth+1))
+    if not is_available_pos:
+        #raise Exception
+        return 0
+    return v
+
+    #만약 보드가 terminal state이면 utility 리턴 (승리 1 패배 -1)
+    #v = -INF
+    #for 가능한 액션에 대해
+    #   v = min(v, MAX_VALUE(board에 액션 수행한 보드,a,b))
+    #   if v <= a then return v #a = alpha = MAX 경로에서 현재까지 발견한 최선의 선택 (값이 가장 큰 선택)
+    #   b = min(b,v)
+    #return v
+
+def ai(allowable_board, player_turn):
+    return minimax_descision(allowable_board, player_turn)
 
 TIME_LIMIT = 10#int(input("set AI's turn time limit (second): "))
 player_turn = 1#1 for black(play  first), -1 for white
-while True:
-    you = int(input("set player to play first (1 = you, -1 = AI): "))
-    if you in (-1,1):
-        break
-    print("Invalid input. Try again.")
+# while True:
+#     you = int(input("set player to play first (1 = you, -1 = AI): "))
+#     if you in (-1,1):
+#         break
+#     print("Invalid input. Try again.")
+
+# n = node([
+#     [1, -1, 1],
+#     [-1, 1, -1],
+#     [1, -1, 0]
+# ])
+# print(n.print_board())
+# print(n.goal_test_pos(c(2,0)))
+# raise Exception
+
 next_move = None
 while True:
     print_board()
@@ -278,20 +433,21 @@ while True:
         while not Board.is_empty(next_move):
             print("Invalid user movement. There is a stone already. Try another.")
             next_move = get_input()
-        while not Board.is_acceptable(next_move, player_turn):
-            print("Invalid user movement. Violated 33 or 44 rule. Only 43 is permitted. Try another.")
-            next_move = get_input()
+        # while not Board.is_acceptable(next_move, player_turn):
+        #     print("Invalid user movement. Violated 33 or 44 rule. Only 43 is permitted. Try another.")
+        #     next_move = get_input()
         Board.update_board(next_move, player_turn)
         player_turn = -player_turn
     elif player_turn == -1:
-        #Board.update_allowable_pos_board()
-        allowable_board = Board.get_allowable_pos_board()
-        next_move = ai(allowable_board)
+        Board.update_allowable_pos_board()
+        ab = Board.get_allowable_pos_board()
+        next_move = ai(ab, player_turn)
         while not Board.is_empty(next_move):
             print(f"{next_move} Invalid computer movement. Stone already exists. Retrying..")
-            next_move = ai(allowable_board)
-        while not Board.is_acceptable(next_move, player_turn):
-            print(f"{next_move} Invalid computer movement. Unacceptable. Retrying..")
-            next_move = ai(allowable_board)
+            next_move = ai(ab, player_turn)
+        # while not Board.is_acceptable(next_move, player_turn):
+        #     print(f"{next_move} Invalid computer movement. Unacceptable. Retrying..")
+        #     next_move = ai(ab, player_turn)
         Board.update_board(next_move, player_turn)
         player_turn = -player_turn
+        print(f"Computer move: {next_move}")
