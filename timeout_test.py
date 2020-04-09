@@ -1,18 +1,34 @@
-import multiprocessing
-import time
+import asyncio
 
-def bar():
-    for i in range(100):
-        print("Tick")
-        time.sleep(1)
+def min_value(searching, loop, end_time):
+    if loop.time() > end_time:
+        return 9999#"eval func"
+    m = 0
+    for i in range(4):
+        m = max(0,max_value(searching + i, loop, end_time))
+    return m
 
-if __name__ == '__main__':
-    p = multiprocessing.Process(target=bar)
-    p.start()
+def max_value(searching, loop, end_time):
+    if loop.time() > end_time:
+        return 8888#"eval func"
+    m = 0
+    for i in range(4):
+        m = max(0,min_value(searching + i, loop, end_time))
+    return m
 
-    p.join(10)
+async def minimax_search(loop, end_time):
+    searching = 1
+    if loop.time() > end_time:
+        return "eval func"
+    for i in range(4):
+        min_value(i, loop, end_time)
+    return
 
-    if p.is_alive():
-        print("running.. let's kill it..")
-        p.terminate()
-        p.join()
+async def absearch(timeout):
+    print('absearch start')
+    loop = asyncio.get_running_loop()
+    end_time = loop.time() + timeout
+    await minimax_search(loop, end_time)
+
+timeout = 0.2
+asyncio.run(absearch(timeout))
