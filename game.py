@@ -8,11 +8,14 @@ import asyncio
 #흑만 33, 44, 장목 금지
 #금지된 수를 놓으면서 5가 만들어지는 것은 승리
 #백은 장목 허용
+from pip._vendor.html5lib._utils import memoize
 from pprint import pprint
 
 import sys
 
-SIZE = 3
+SIZE = 8
+LENGTH = 5
+TIMEOUT = 'x' #Constant
 
 class Board:
     b = [[0 for x in range(SIZE)] for y in range(SIZE)] #board
@@ -99,7 +102,7 @@ class Board:
                 if not Board.is_move_inside_board(check_spot): #후보 자리 자체가 판 밖에 있는 경우 -> 한쪽이 막혀 있어서 열린n 불가능
                     break
                 if Board.check(check_spot) == -player_turn:
-                    print(f"check_spot {check_spot} is already placed")
+                    # print(f"check_spot {check_spot} is already placed")
                     break
                 is_blocked = False
                 temp = check_spot
@@ -196,7 +199,7 @@ class Board:
                         next = next + dir
                     else:
                         break
-            if len[0] + len[1] - 1 == 3:
+            if len[0] + len[1] - 1 == LENGTH:
                 return player
         return False
 
@@ -263,9 +266,8 @@ def get_input():
     return c(x, y)
 
 class Node:
-    def __init__(self, board, eval_func):
+    def __init__(self, board):
         self.board = board
-        self.evaluation_function = eval_func
         self.children = list()
 
     def input(self, c, player_turn):
@@ -305,16 +307,15 @@ class Node:
             for i, dir in enumerate((d, -d)):
                 next = pos + dir
                 while True:
-                    (x, y) = next.tuplize()
-                    if (0 <= x < SIZE) and (0 <= y < SIZE) and self.board[x][y] == player:
+                    if not self.is_move_inside_board(next) or self.check(next) != player:
+                        #print(f"\t({x},{y}) 끊어짐 확인, len[{i}] = {len[i]}")
+                        break
+                    else:
                         #print(f"\t({x},{y}) 연결 확인, len[{i}] = {len[i]}")
                         len[i] += 1
                         next = next + dir
-                    else:
-                        #print(f"\t({x},{y}) 끊어짐 확인, len[{i}] = {len[i]}")
-                        break
             #print(f"방향:{d} 연결된 길이:{len[0]+len[1]-1}")
-            if len[0] + len[1] - 1 == 3:
+            if len[0] + len[1] - 1 == 5:
                 return player
         return False
 
@@ -331,97 +332,208 @@ class Node:
     def get_board(self):
         return self.board
 
-    def get_evaluation_function(self):
+    @memoize
+    def get_evaluation_function(self, player_now):
         #print("get_evaluation_function start")
         #새로 둔 수가 33체커를 이용해 인접 3,4,5를 만들면 +
         #인접한 블록의 상대방 3,4,5를 막으면 +
+
+        #내가 공격할 수 있는 공간이 상대방이 공격할 수 있는 공간보다 많을때
+        #내가 공격할 수 있는 공간 수 * 각 상황별 가중치 - 상대방이 공격할 수 있는 공간 수 * 각 상황별 가중치
+        #초기에는 내가 이길 가능성이 높고 상대방이 이길 가능성이 적은 경우를 고르고
+        #후반에는 거의 정답에 근사해야 한다. (이기는 것이 확실해질수록 100%에 수렴)
+        #'양쪽이 막혀버린 수'는 더 이상 고려할 필요 없음
+        #'한쪽이 막힌 수'는 보통 가치가 없으나 3이상부터는 의미있음. 두 턴 안에 안막으면 이기는 게 가능.
+        #3 (열린 4)를 만드는 것은 무조건 좋음
+
+        #공격하면 이기는 상황 (열린 4 만들어지는 경우) -> 공격
+        #아닐경우: 무조건 막아야 하는 상황 -> 무조건 막아야 함.
+        #아닐경우: 공격하면 상대가 무조건 막아야 하는 상황 -> 일단 공격하고 볼 수도 있고, 킵할 수도 있음. AI는 대체로 공격. 여러 개면 그 중 방어하면서 공격하는 것으로.
+
+        #eval_func : utility의 추정값. 어느 쪽이 이길 것 같은지.
+
+        # 5 만들기 > 5 막기 > 열린 4 만들기 >= 열린 4 막기 > 열린 3 만들기 >= 열린 3 막기 >= 닫힌 4 막기
+        #위와 같이 행동하도록 state의 eval func의 구현하려면? (상태,턴) => eval_func
+        #계산법: 현재 상태에서 나의 점수 - 상대 점수
+        #(내 열린 5, ) => 승리 INF
+        #(내 열린 4, 내 턴) => 승리 1600
+        #(내 열린 4, 상대 턴) => 승리
+        #(내 열린 3/ 닫힌 4, 내 턴) => 최고 점수 (사실상 승리) 800
+        #(내 열린 3/ 닫힌 4, 상대 턴) => 좋은 점수 (상대가 열린 4가 아닌 이상 무조건 막아야 함)
+        #(상대 열린 3/ 닫힌 4, 내 턴) => 나쁜 점수 (내가 열린 4가 아닌 이상 무조건 막아야 함)
+        #(상대 열린 3/ 닫힌 4, 상대 턴) => 최악 점수 (사실상 패배) -8
+        #(상대 열린 4, 상대 턴) => 패배 -1600
+        #(상대 열린 5, ) => 패배 -INF
+
+        #점수계산법
+        #모든 스팟 체크
+        # if goal_test() => INF
+        # elif '44' => INF/2
+        # elif '43' => INF/4
+        # elif '33' => -INF/8
+        # elif '열린4' => INF/8
+
+        # elif '3' => 개수당 +16 ┼○○○┼ ┼○○┼○┼
+        # elif 반닫힌'3' => 개수당 +8 ●○○○┼ ●○○┼○┼
+        # elif '2' => 개수당 +4 ┼○○┼ ┼○┼○┼
+        # elif 반닫힌'2' => 개수당 +2 ●○○┼ ●○┼○┼
+        # elif '1' => 개수당 +1 ┼○┼
+        # elif 반닫힌 '1' => 개수당 +0.5 ●○┼
+
+        score = [0, 0]
+        INF = 87654321
+
         for x in range(SIZE):
             for y in range(SIZE):
                 # print(f"c({x},{y})탐색중..")
-                move = c(x,y)
-                self.input(move, player_turn)
-                len_max_dir = [0, 0, 0, 0]
-                # print(f"now: {move}")
-                for i, direction in enumerate((c(0, 1), c(1, 0), c(1, 1), c(1, -1))):  # [ -, |, \, /]
-                    check_spots = [move, move]
-                    len = [1, 1]
-                    is_blocked = False
-                    # print(f"direction: {direction}")
-                    for j, toward in enumerate((direction, -direction)):
-                        # print(f"\ttoward: {toward}")
-                        len[j] = 1
-                        while True:
-                            check_spots[j] = check_spots[j] + toward
-                            if not self.is_move_inside_board(check_spots[j]) or self.check(check_spots[j]) == -player_turn:
-                                # print(f"\t\tblocked: {check_spots[j]}, len:{len[j]}")
-                                is_blocked = True
+                move = c(x, y)
+                #인접한 노드가 있거나 이미 있는 노드에 대하여
+                is_adjacent = False
+                if self.check(move) == 0:
+                    for direction in (c(0, 1), c(1, 0), c(1, 1), c(1, -1)):
+                        for d in (-direction, direction):
+                            m = move + d
+                            if self.is_move_inside_board(m) and self.check(m) != 0 :
+                                is_adjacent = True
                                 break
-                            elif self.board[x][y] == 0:
-                                # print(f"\t\tcheck spot found: {check_spots[j]}, len:{len[j]}")
-                                break
-                            else:
-                                # print(f"\t\tcheck spot++: {check_spots[j]}, len:{len[j]}")
-                                len[j] += 1
-                    len_max = 0
-                    for j, toward in enumerate((direction, -direction)):
-                        check_spot = check_spots[j]
-                        if not self.is_move_inside_board(check_spot):  # 후보 자리 자체가 판 밖에 있는 경우 -> 한쪽이 막혀 있어서 열린n 불가능
-                            break
-                        if self.check(check_spot) == -player_turn:
-                            # print(f"check_spot {check_spot} is already placed")
-                            break
-                        is_blocked = False
-                        temp = check_spot
-                        self.input(temp, player_turn)
-                        len_more = 1
-                        # print(f"\tcheck spot: {temp}, toward: {toward}")
-                        while True:
-                            check_spot = check_spot + toward
-                            if (not self.is_move_inside_board(check_spot)) or self.check(check_spot) == -player_turn:
-                                # print(f"\t\tblocked: {check_spots[j]}, len_more: {len_more}")
-                                is_blocked = True
-                                self.input(temp, 0)
-                                break
-                            elif self.check(check_spot) == 0:
-                                # print(f"\t\tend of line: {check_spot}, len_more: {len_more}")
-                                self.input(temp, 0)
-                                break
-                            else:
-                                # print(f"\t\tcheck spot++: {check_spot}, len_more: {len_more}")
-                                len_more += 1
-                        if is_blocked:
-                            self.input(temp, 0)
-                            # print(f"\tblocked, skip search toward: {toward}")
+                if self.check(move):
+                    if is_adjacent:
+                        assert self.check(move) == 0
+                        self.input(move, player_now)
+                    player_pos = self.check(move)
+                    len_max_dir = [0, 0, 0, 0]
+                    block = [0, 0, 0, 0]
+                    # print(f"now: {move}")
+                    for i, direction in enumerate((c(0, 1), c(1, 0), c(1, 1), c(1, -1))):  # [ -, |, \, /]
+                        check_spots = [move, move]
+                        len = [1, 1]
+                        len_block = [0,0]
+                        len_block_bidirectional = 1
+                        # print(f"direction: {direction}")
+                        for j, toward in enumerate((direction, -direction)):
+                            # print(f"\ttoward: {toward}")
+                            len[j] = 1
+                            while True:
+                                check_spots[j] = check_spots[j] + toward
+                                if not self.is_move_inside_board(check_spots[j]) or self.check(check_spots[j]) == -player_pos:
+                                    block[i] += 1
+                                    check_spots[j] = False
+                                    len_block[j] = len[j]
+                                    # print(f"\t\tblocked: {check_spots[j]}, len[{j}]:{len[j]}, len_block[{j}]:{len_block[j]}")
+                                    break
+                                elif self.check(check_spots[j]) == 0:
+                                    temp_check_spot = check_spots[j]
+                                    while True:
+                                        if len_block_bidirectional >= 5 or not self.is_move_inside_board(temp_check_spot) or self.check(temp_check_spot) == -player_pos:
+                                            break
+                                        len_block[j] += 1
+                                        len_block_bidirectional += 1
+                                        # print(f"\t\tcheck more: {temp_check_spot}, len_block_bidirectional:{len_block_bidirectional}, len_block[{j}]:{len_block[j]}")
+                                        temp_check_spot = temp_check_spot + toward
+                                    # print(f"\t\tcheck spot found: {check_spots[j]}, len:{len[j]}")
+                                    #안막혀있으면 => 막혀 있는 데까지 가보기. 총 가본 거리가 5를 넘어가면 중단(오목이 satisfiable)
+                                    #양쪽 len_block이 5보다 작으면 +0, check_spot 고려할 필요 없음.
+                                    break
+                                else:
+                                    # print(f"\t\tcheck spot++: {check_spots[j]}, len:{len[j]}, len_block_bidirectional:{len_block_bidirectional}")
+                                    len[j] += 1
+                                    len_block_bidirectional += 1
+                        # print(len_block[0],len_block[1])
+                        if len[0] + len[1] - 1 == 5: #goal_test
+                            if is_adjacent:
+                                self.input(move, 0)
+                            return INF
+                        elif len_block_bidirectional < 5: #가능한 공간이 5보다 작은 경우
+                            # print(f"************OMOK IS UNSATISFIABLE IN THIS MOVE: {move}, DIRECTION: {direction}************")
                             continue
-                        len_max = max(len_max, len[0] + len[1] - 1 + len_more)
-                        self.input(temp, 0)
-                    len_max_dir[i] = len_max - 1  # 방향별 열린 'n'에 대해 'n-1' 저장 (열린4 -> 3)
-                    # 오른쪽 넣을 수 있는 공간 확인, 연속된 개수 저장
-                    # 왼쪽 넣을 수 있는 공간 확인, 연속된 개수 저장
-                    # 오른쪽 열린 k 측정 (오른쪽에 넣었다 가정하고 왼쪽 연속된 개수 + 오른쪽 연속된 개수 + 더 가보기)
-                    # 왼쪽도 같은 방법으로 l측정
-                    # n = k + l - 1
-                self.input(move, 0)
-                line = [0, 0, 0, 0, 0, 0, 0, 0]
 
-                for i in len_max_dir:  # 일반룰
-                    line[i] += 1
-                for w, num in enumerate(line):
-                    self.evaluation_function += (w ** 2) * 100 * num
+                        len_max = 0
+                        for j, toward in enumerate((direction, -direction)):
+                            #check_spot에서 toward쪽으로 가보며 점검
+                            #block[j] 기록 0 = 막혀 있지 않음, 1 = 한쪽 막힘, 2 = 양쪽 막힘
+                            #len_max_dir[i], block[i] 기록해 두 리스트 조합해서 판단
+                            check_spot = check_spots[j]
+                            if check_spot == False:
+                                continue
+                            temp = check_spot
+                            assert self.check(temp) == 0
+                            self.input(temp, player_pos)
+                            len_more = 1
+                            # print(f"\tcheck spot: {temp}, toward: {toward}")
+                            while True:
+                                check_spot = check_spot + toward
+                                if (not self.is_move_inside_board(check_spot)) or self.check(check_spot) == -player_pos:
+                                    # print(f"\t\tblocked: {check_spots[j]}, len_more: {len_more}")
+                                    block[j] += 1
+                                    self.input(temp, 0)
+                                    break
+                                elif self.check(check_spot) == 0:
+                                    #block될 때까지 가보기
+                                    #지금까지 발견한 길이 + 가본 길이가 5보다 작을 경우 stop
+                                    # print(f"\t\tend of line: {check_spot}, len_more: {len_more}")
+                                    self.input(temp, 0)
+                                    break
+                                else:
+                                    # print(f"\t\tcheck spot++: {check_spot}, len_more: {len_more}")
+                                    len_more += 1
+                            # print(f"\t\tlen[0]={len[0]}, len[1]={len[1]}")
+                            len_max = max(len_max, len[0] + len[1] - 1 + len_more)
+                            self.input(temp, 0)
+                        len_max_dir[i] = len_max - 1  # 방향별 열린 'n'에 대해 'n-1' 저장 (열린4 -> 3)
+                        # print(f"\t\tlen_max_dir{len_max_dir}")
+                        # 오른쪽 넣을 수 있는 공간 확인, 연속된 개수 저장
+                        # 왼쪽 넣을 수 있는 공간 확인, 연속된 개수 저장
+                        # 오른쪽 열린 k 측정 (오른쪽에 넣었다 가정하고 왼쪽 연속된 개수 + 오른쪽 연속된 개수 + 더 가보기)
+                        # 왼쪽도 같은 방법으로 l측정
+                        # n = k + l - 1
+                    if is_adjacent:
+                        self.input(move, 0)
+
+                    len_count = [0, 0, 0, 0, 0, 0, 0, 0]
+                    for i, len in enumerate(len_max_dir):  # 일반룰
+                        if block[i] == 0:
+                            len_count[len] += 1
+                    # print(len_count)
+                    if len_count[4] >= 2:
+                        return INF/2
+                    elif len_count[4] == 1 and len_count[3] == 1:
+                        return INF/4
+                    elif len_count[3] == 2:
+                        # print(f"33 detected: {move}")
+                        return -INF
+
+                    for i, _len in enumerate(len_max_dir):
+                        if _len > 0:
+                            score[(player_pos + 1) // 2] += 2 ** (1 + _len*2 - block[i])  # score[1]: player 1(black) socre, score[0]: player -1(white) score
+
+        # elif '3' => 개수당 +32 ┼○○○┼ ┼○○┼○┼
+        # elif 반닫힌'3' => 개수당 +16 ●○○○┼ ●○○┼○┼
+        # elif '2' => 개수당 +8 ┼○○┼ ┼○┼○┼
+        # elif 반닫힌'2' => 개수당 +4 ●○○┼ ●○┼○┼
+        # elif '1' => 개수당 +2 ┼○┼
+        # elif 반닫힌 '1' => 개수당 +1 ●○┼
+        # 만약 가능한 길이 < 5 인 경우 +0 ●????● ●???● ●??● ●?●
+
 
         #print("get_evaluation_function end")
-        return self.evaluation_function
+        return score[(player_now + 1) // 2] * 1.5 - score[(-player_now + 1) // 2]
     #def is_acceptable
 
-def heuristic_minimax(state, last_input, a, b, player_turn_in_state, player_now, limit, loop, end_time): #returns utility 값 #가장 작은 max를 찾음 (상대가 둘 차례)
-    #print(f"Searching.. heuristic_minimax(state, last_input: {last_input}, alpha: {a}, beta: {b}, player_turn_in_state: {player_turn_in_state}, limit: {limit})")
+@memoize #loop, limit 고려안하도록.
+def heuristic_minimax(state, last_input, a, b, player_turn_in_state, player_now, limit, loop, end_time): #returns utility 값 / heuristic 값
+    print(f"Searching.. heuristic_minimax(state, last_input: {last_input}, alpha: {a}, beta: {b}, player_turn_in_state: {player_turn_in_state}, limit: {limit})")
     #state.print_board()
     #assert state.goal_test_pos(last_input) == False or state.goal_test_pos(last_input) == player_turn
     if state.goal_test_pos(last_input) != False:
-        #print(f"***********************Player {player_turn} win***********************")
-        return False, 9999 #플레이어 턴?
-    if limit == 0 or loop.time() > end_time:
-        return True, state.get_evaluation_function()
+        print(f"goal state found{last_input}, state.check:{state.check(last_input)}, player:{player_turn_in_state}")
+        return False, 987654321 * (player_turn_in_state) #내가 둬야 하는데 상대가 승리함
+    if limit == 0: #or
+        # state.print_board()
+        # print(state.get_evaluation_function(player_now))
+        # print()
+        return True, state.get_evaluation_function(player_now)
+    elif loop.time() > end_time:
+        return True, TIMEOUT
     cutoff_occurred = False
     cutoff = False
 
@@ -435,18 +547,29 @@ def heuristic_minimax(state, last_input, a, b, player_turn_in_state, player_now,
     for i in range(SIZE):
         for j in range(SIZE):
             if state.board[i][j] == 0:
-                is_available_pos = True
-                child = Node(copy.deepcopy(state.get_board()),0)
-                child.input(c(i,j), player_turn_in_state)
-                #child.update_evaluation_func(c(i,j))
-                state.children.append(child)
-                cutoff, h_minimax = heuristic_minimax(child, c(i, j), a, b, -player_turn_in_state, player_now, limit - 1, loop, end_time)
-                if player_turn_in_state == player_now: #max_value
-                    v = max(v, h_minimax)
-                else: #min_value
-                    v = min(v, h_minimax)
-                if cutoff:
-                    cutoff_occurred = True
+                is_pos_worth_check = False
+                for __i in range(-3, 4):
+                    for __j in range(-3, 4):
+                        ii = i + __i
+                        jj = j + __j
+                        if ii >= 0 and ii < SIZE and jj >= 0 and jj < SIZE and state.board[i + __i][j + __j] != 0:
+                            is_pos_worth_check = True
+                            break
+                if is_pos_worth_check:
+                    is_available_pos = True
+                    child = Node(copy.deepcopy(state.get_board()))
+                    child.input(c(i,j), player_turn_in_state)
+                    #child.update_evaluation_func(c(i,j))
+                    state.children.append(child)
+                    cutoff, h_minimax = heuristic_minimax(child, c(i, j), a, b, -player_turn_in_state, player_now, limit - 1, loop, end_time)
+                    if h_minimax == TIMEOUT:
+                        return True, TIMEOUT
+                    elif cutoff:
+                        cutoff_occurred = True
+                    if player_turn_in_state == player_now: #max_value
+                        v = max(v, h_minimax)
+                    else: #min_value
+                        v = min(v, h_minimax)
 
     if not is_available_pos: #Terminal state 판단 (한 칸씩 확인해야 하므로 뒤로 미룸)
         return False, 0
@@ -469,29 +592,52 @@ def ai_async_wrapper(allowable_board, player_turn, TIME_LIMIT):
 
 async def ai(allowable_board, player_turn, loop, end_time):
     argmax = c(0,0)
+    last_argmax = c(0,0)
     INF = 987654321
     max_t = -INF
     is_available_pos = False
-    for depth_limit in range(1, INF, +1): #iterative deepening
+    for depth_limit in range(0, INF, +1): #iterative deepening
         cutoff_occurred = False
-        print(f"depth{depth_limit} search start")
+        TIMEOUT_occurred = False
+        print(f"Depth{depth_limit} search start")
         for i in range(SIZE):
             for j in range(SIZE):
-                if allowable_board[i][j] == True or allowable_board[i][j] == player_turn:
-                    is_available_pos = True
-                    child = Node(copy.deepcopy(Board.get_board()), 0)
-                    child.input(c(i,j), player_turn)
-                    #child.update_evaluation_func(c(i,j))
-                    cutoff, min_val = heuristic_minimax(child, c(i,j), -INF, INF, -player_turn, player_turn, depth_limit, loop, end_time)
-                    if cutoff:
-                        cutoff_occurred = True
-                    if min_val > max_t:
-                        max_t = min_val
-                        argmax = c(i,j)
-        print(f"depth{depth_limit} search result: recommend {argmax}")
-        if loop.time() > end_time:
-            print("Cutoff by timeout")
-            break
+                if not TIMEOUT_occurred:
+                    is_pos_worth_check = False
+                    if allowable_board[i][j] == player_turn:
+                        is_pos_worth_check = True
+                    elif allowable_board[i][j] == True:
+                        for __i in range(-3,4):
+                            for __j in range(-3,4):
+                                ii = i + __i
+                                jj = j + __j
+                                if ii >= 0 and ii < SIZE and jj >= 0 and jj < SIZE and allowable_board[i+__i][j+__j] == False:
+                                    is_pos_worth_check = True
+                                    break
+                    if is_pos_worth_check:
+                        is_available_pos = True
+                        child = Node(copy.deepcopy(Board.get_board()))
+                        child.input(c(i,j), player_turn)
+                        #child.update_evaluation_func(c(i,j))
+                        cutoff, min_val = heuristic_minimax(child, c(i,j), -INF, INF, -player_turn, player_turn, depth_limit, loop, end_time)
+                        print(f"min_val:{min_val}")
+                        if min_val == INF and depth_limit == 0:
+                            last_argmax = c(i,j)
+                            TIMEOUT_occurred = True #한 step만에 goal을 찾은 경우 더 이상 탐색하지 않음. 이를 위해 TIMEOUT_occurred 이용
+                            break
+                        if min_val == TIMEOUT:
+                            TIMEOUT_occurred = True
+                            break
+                        elif cutoff:
+                            cutoff_occurred = True
+                        if min_val > max_t:
+                            max_t = min_val
+                            argmax = c(i,j)
+        if TIMEOUT_occurred:
+            print(f"Cutoff by timeout. Previous depth result: {last_argmax}")
+            return last_argmax
+        print(f"Depth{depth_limit} search result: recommend {argmax}, eval_func: {max_t}")
+        last_argmax = argmax
         if not cutoff_occurred:
             print(f"Completely searched in this depth limit: {depth_limit}. No cutoff found.")
             break
@@ -502,7 +648,7 @@ async def ai(allowable_board, player_turn, loop, end_time):
         sys.exit()
     return argmax
 
-TIME_LIMIT = 5#int(input("set AI's turn time limit (second): "))
+TIME_LIMIT = 30#int(input("set AI's turn time limit (second): "))
 player_turn = 1#1 for black(play  first), -1 for white
 # while True:
 #     you = int(input("set player to play first (1 = you, -1 = AI): "))
@@ -511,13 +657,29 @@ player_turn = 1#1 for black(play  first), -1 for white
 #     print("Invalid input. Try again.")
 
 # n = Node([
-#     [1, -1, 1],
-#     [-1, 1, -1],
-#     [1, -1, 0]
+#     [0, -1, -1, 1, -1, 0, 0, 0],
+#     [0, 0, 1, 1, 1, 0, 0, 0],
+#     [0, 1, -1, -1, 1, 0, 0, 0],
+#     [-1, 1, -1, 1, 1, -1, 0, 0],
+#     [0, 1, -1, -1, 1, 1, 0, 0],
+#     [0, -1, 1, 1, -1, -1 0, 0],
+#     [0, 0, 1, 1, -1, -1, 0, 0],
+#     [0, 0, 0, 0, 0, 0, 0, 0],
 # ])
-# print(n.print_board())
-# print(n.goal_test_pos(c(2,0)))
+# n.print_board()
+# print(n.get_evaluation_function(1))
 # raise Exception
+
+# Board.b = [
+#     [0, -1, -1, 1, -1, 0, 0, 0],
+#     [0, 0, 1, 1, 1, 0, 0, 0],
+#     [0, 1, -1, -1, 1, 0, 0, 0],
+#     [-1, 1, -1, 1, 1, -1, 0, 0],
+#     [0, 1, -1, -1, 1, 1, 0, 0],
+#     [0, -1, 1, 1, -1, -1, 0, 0],
+#     [0, 0, 1, 1, -1, -1, 0, 0],
+#     [0, 0, 0, 0, 0, 0, 0, 0],
+# ]
 
 next_move = None
 while True:
