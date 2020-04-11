@@ -35,6 +35,23 @@ class Board:
     #     [0, 0, 0, 0, -1, 0, 0, 0]
     # ]
 
+    @staticmethod
+    def create_board_from_txt(txt):
+        i = 0
+        for k, line in enumerate(txt.split('\n')):
+            if k == 0:
+                continue
+            j = 0
+            for char in line[1:].split(' '):
+                if char == '┼':
+                    Board.b[i][j] = 0
+                elif char == '●':
+                    Board.b[i][j] = -1
+                elif char == '○':
+                    Board.b[i][j] = 1
+                j += 1
+            i += 1
+
     bs = [[0 for z in range(SIZE)] for w in range(SIZE)] #board for allowable position
 
     @staticmethod
@@ -680,6 +697,16 @@ player_turn = 1#1 for black(play  first), -1 for white
 #     [0, 0, 1, 1, -1, -1, 0, 0],
 #     [0, 0, 0, 0, 0, 0, 0, 0],
 # ]
+Board.create_board_from_txt(""" 0 1 2 3 4 5 6 7
+0┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ 
+1┼ ┼ ┼ ┼ ● ┼ ┼ ┼ 
+2○ ● ● ● ● ○ ● ┼ 
+3┼ ● ○ ┼ ○ ┼ ○ ┼ 
+4┼ ● ○ ○ ○ ● ○ ┼ 
+5┼ ┼ ● ┼ ┼ ┼ ┼ ┼ 
+6┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ 
+7┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ """)
+print_board()
 
 next_move = None
 while True:
