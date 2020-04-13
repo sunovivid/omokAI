@@ -1,0 +1,12 @@
+minimax여서 pruning 구현 안했던 거 구현함.
+정교한 eval func짜서 잘 돌아감..... -> commit
+다섯 줄 이어지는 것을 막지 않고 공격을 둠.
+다섯 줄 이어지는 거 막기. 
+기존 eval func는 현재 플레이어를 기준으로 판단함.
+새로운 eval func는 현재 판을 보고 절대적인 값을 리턴하려고 함 (흑 승리 INF ~ 백 승리 -INF)
+eval func값을 2차원 이상 벡터 대신 값 하나로 쓸 수 있는건 constant 게임이면서 일대일 게임이라서.
+정교한 eval func 계산을 위해 영합 조건을 없애자.
+eval_func(state, player)
+
+newevalfunc 브랜치:
+evalfunc는 훌륭하니 개선을 미뤄두고, 5를 안막는 문제만 집중해서 고쳐보자.
