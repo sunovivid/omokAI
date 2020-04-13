@@ -13,7 +13,7 @@ from pprint import pprint
 
 import sys
 
-SIZE = 8
+SIZE = 11
 LENGTH = 5
 TIMEOUT = 'x' #Constant
 
@@ -36,7 +36,7 @@ class Board:
     # ]
 
     @staticmethod
-    def create_board_from_txt(txt):
+    def create_board_from_txt(txt, reverse_value=1):
         if txt[0] == '\n':
             txt = txt[1:]
         i = 0
@@ -48,9 +48,9 @@ class Board:
                 if char == '┼':
                     Board.b[i][j] = 0
                 elif char == '●':
-                    Board.b[i][j] = 1
+                    Board.b[i][j] = 1 * reverse_value
                 elif char == '○':
-                    Board.b[i][j] = -1
+                    Board.b[i][j] = -1 * reverse_value
                 j += 1
             i += 1
 
@@ -284,6 +284,9 @@ def get_input():
     x, y = index_to_num(player_move[0]), index_to_num(player_move[1])
     return c(x, y)
 
+def player_index(player_turn): #return player index: black(-1) => 0, white(0) => 1
+    return (player_turn + 1) // 2
+
 class Node:
     def __init__(self, board):
         self.board = board
@@ -446,7 +449,7 @@ class Node:
                                     len_block_bidirectional += 1
                         # print(len_block[0],len_block[1])
                         if len[0] + len[1] - 1 == 5: #goal_test
-                            print(f"goal_found({move})")
+                            # print(f"goal_found({move})")
                             return INF
                         elif len_block_bidirectional < 5: #가능한 공간이 5보다 작은 경우
                             # print(f"************OMOK IS UNSATISFIABLE IN THIS MOVE: {move}, DIRECTION: {direction}************")
@@ -469,7 +472,7 @@ class Node:
                                 check_spot = check_spot + toward
                                 if (not self.is_move_inside_board(check_spot)) or self.check(check_spot) == -player_pos:
                                     # print(f"\t\tblocked: {check_spots[j]}, len_more: {len_more}")
-                                    block[j] += 1
+                                    # block[j] += 1
                                     self.input(temp, 0)
                                     break
                                 elif self.check(check_spot) == 0:
@@ -492,26 +495,42 @@ class Node:
                         # 왼쪽도 같은 방법으로 l측정
                         # n = k + l - 1
                     len_count = [0, 0, 0, 0, 0, 0, 0, 0]
+                    halfblocked_len_count = [0, 0, 0, 0, 0, 0, 0, 0]
                     for i, len in enumerate(len_max_dir):  # 일반룰
                         if block[i] == 0:
                             len_count[len] += 1
-                    # print(len_count)
+                        elif block[i] == 1:
+                            halfblocked_len_count[len] += 1
+                        else:
+                            assert True
+                    # print(f"\tlen_count:             {len_count}")
+                    # print(f"\thalfblocked_len_count: {halfblocked_len_count}")
+                    #절대치 기준: 5 > 열린4 > 닫힌4 > 열린3 > 닫힌 3 > ...
                     if len_count[4] >= 2:
-                        score[player_pos] += INF//2
+                        # print("\t44")
+                        score[player_index(player_pos)] += INF//32
                     elif len_count[4] >= 1 and len_count[3] == 1:
-                        score[player_pos] += INF//3
+                        # print("\t43")
+                        score[player_index(player_pos)] += INF//34
                     elif len_count[4] >= 1:
-                        score[player_pos] += INF//4
+                        # print("\t4")
+                        score[player_index(player_pos)] += INF//36
+                    elif halfblocked_len_count[4] >= 1:
+                        score[player_index(player_pos)] += INF//38
                     elif len_count[3] >= 2:
+                        # print("\t33")
                         # print(f"33 detected: {move}")
-                        score[player_pos] += -INF
+                        score[player_index(player_pos)] += -INF
                     elif len_count[3] == 1:
+                        # print("3")
                         # print("3발견!")
-                        score[player_pos] += INF//32
+                        score[player_index(player_pos)] += INF//128
 
                     for i, _len in enumerate(len_max_dir):
                         if _len > 0:
-                            score[(player_pos + 1) // 2] += 2 ** (1 + _len*2 - block[i])  # score[1]: player 1(black) socre, score[0]: player -1(white) score
+                            score[player_index(player_pos)] += 2 ** (1 + _len*2 - block[i])  # score[1]: player 1(black) socre, score[0]: player -1(white) score
+
+                    # print(f"현재 eval_func: {score[player_index(player_now)] - score[player_index(-player_now)]}")
         #어떻게 작동해야 하나?
         #eval func: 한 수만 볼 수 있는 경우 eval func는 greedy하게 움직이는 건 어쩔 수 없나? 어차피 두 수 후만 봐도 OOO을 막아야 한다는걸 아나?
         #5, 열린4 => MAX보상
@@ -524,25 +543,30 @@ class Node:
         # elif 반닫힌 '1' => 개수당 +1 ●○┼
         # 만약 가능한 길이 < 5 인 경우 +0 ●????● ●???● ●??● ●?●
 
-
         #print("get_evaluation_function end")
         # print(f"score[player: {player_now}]: {score[(player_now + 1) // 2]}, score[player: {-player_now}]: {score[(-player_now + 1) // 2]}")
         # print(f"result: {score[(player_now + 1) // 2] - score[(-player_now + 1) // 2] * 8}")
-        return score[(player_now + 1) // 2] # - score[(-player_now + 1) // 2] // 4 #나의 이득이 우선. 이득이 비슷하면 상대의 점수를 낮추는 수가 더 좋음.
+        return score[player_index(player_now)] - score[player_index(-player_now)] * 1.5#나의 이득이 우선. 이득이 비슷하면 상대의 점수를 낮추는 수가 더 좋음.
     #def is_acceptable
 
 @memoize #loop, limit 고려안하도록.
-def heuristic_minimax(state, last_input, a, b, player_turn_in_state, player_now, limit, loop, end_time): #returns utility 값 / heuristic 값
-    # print(f"Searching.. heuristic_minimax(state, last_input: {last_input}, alpha: {a}, beta: {b}, player_turn_in_state: {player_turn_in_state}, limit: {limit})")
+def heuristic_minimax(state, last_input, a, b, player_turn_in_state, player_now, limit, loop, end_time, depth_limit): #returns utility 값 / heuristic 값
+    indent = '\t' * (depth_limit - limit + 1)
+    # print(f"{indent}heuristic_minimax(depth:{depth_limit-limit}, last_input: {last_input}, alpha: {a}, beta: {b}, player: {player_turn_in_state}, limit: {limit})")
     #state.print_board()
     #assert state.goal_test_pos(last_input) == False or state.goal_test_pos(last_input) == player_turn
-    if state.goal_test_pos(last_input) != False:
-        print(f"goal state found{last_input}, state.check:{state.check(last_input)}, player:{player_turn_in_state}")
-        return False, 987654321 * (player_turn_in_state) #내가 둬야 하는데 상대가 승리함
+    win_player = state.goal_test_pos(last_input)
+    if win_player == player_now: #player_now win
+        print(f"goal state found{last_input}, state.check:{state.check(last_input)}, win_player:{win_player} eval_func: +987654321")
+        return False, 987654321 #마지막 수가 player_now의 수였을 경우
+    elif win_player == -player_now: #player_now lose
+        print(f"goal state found{last_input}, state.check:{state.check(last_input)}, win_player:{win_player}, eval_func: -987654321")
+        return False, -987654321
     if limit == 0: #or
         # state.print_board()
         # print(state.get_evaluation_function(player_now))
         # print()
+        # print(f"{indent}heuristic_result: eval_func: {state.get_evaluation_function(player_now)}")
         return True, state.get_evaluation_function(player_now)
     elif loop.time() > end_time:
         return True, TIMEOUT
@@ -550,9 +574,9 @@ def heuristic_minimax(state, last_input, a, b, player_turn_in_state, player_now,
     cutoff = False
 
     INF = 987654321
-    if player_turn_in_state == player_now: #max_value
+    if player_turn_in_state == player_now:  # max_value
         v = -INF
-    else: #min_value
+    else:  # min_value
         v = INF
     is_available_pos = False
 
@@ -573,11 +597,11 @@ def heuristic_minimax(state, last_input, a, b, player_turn_in_state, player_now,
                     child.input(c(i,j), player_turn_in_state)
                     #child.update_evaluation_func(c(i,j))
                     state.children.append(child)
-                    cutoff, h_minimax = heuristic_minimax(child, c(i, j), a, b, -player_turn_in_state, player_now, limit - 1, loop, end_time)
+                    cutoff, h_minimax = heuristic_minimax(child, c(i, j), a, b, -player_turn_in_state, player_now, limit - 1, loop, end_time, depth_limit)
                     if h_minimax == TIMEOUT:
                         return True, TIMEOUT
                     elif cutoff:
-                        cutoff_occurred = True
+                            cutoff_occurred = True
                     if player_turn_in_state == player_now: #max_value
                         v = max(v, h_minimax) #v 최댓값 갱신
                         if v >= b:
@@ -591,6 +615,7 @@ def heuristic_minimax(state, last_input, a, b, player_turn_in_state, player_now,
 
     if not is_available_pos: #Terminal state 판단 (한 칸씩 확인해야 하므로 뒤로 미룸)
         return False, 0
+    # print(f"{indent}heuristic_result: selected_eval_func: {v}")
     return cutoff_occurred, v
 
     #만약 보드가 terminal state이면 utility 리턴 (승리 1 패배 -1)
@@ -609,14 +634,15 @@ def ai_async_wrapper(allowable_board, player_turn, TIME_LIMIT):
     return result
 
 async def ai(allowable_board, player_turn, loop, end_time):
-    argmax = c(0,0)
-    last_argmax = c(0,0)
-    INF = 987654321
-    max_t = -INF
-    a = -INF
-    b = INF
-    is_available_pos = False
-    for depth_limit in range(0, 3, +1): #iterative deepening
+    INF = 999999999
+    argmax = c(0, 0)
+    for depth_limit in range(0, 1, +1): #iterative deepening
+        is_available_pos = False
+        argmax = c(0, 0)
+        last_argmax = c(0, 0)
+        v = -INF
+        a = -INF
+        b = INF #v, a, b를 매 depth마다 초기화해줘야 이전 탐색이 영향을 안 줌!!
         cutoff_occurred = False
         TIMEOUT_occurred = False
         print(f"Depth{depth_limit} search start")
@@ -639,40 +665,45 @@ async def ai(allowable_board, player_turn, loop, end_time):
                         child = Node(copy.deepcopy(Board.get_board()))
                         child.input(c(i,j), player_turn)
                         #child.update_evaluation_func(c(i,j))
-                        cutoff, v = heuristic_minimax(child, c(i,j), a, b, -player_turn, player_turn, depth_limit, loop, end_time)
-                        print(f"{c(i,j)}, v:{v}")
-                        if v == INF and depth_limit == 0:
+                        cutoff, h_minimax = heuristic_minimax(child, c(i,j), a, b, -player_turn, player_turn, depth_limit, loop, end_time, depth_limit)
+                        print(str(int(h_minimax)) + ' ', end = '')
+                        # print(f"{c(i,j)}, v:{v}")
+                        if h_minimax == INF and depth_limit == 0:
                             last_argmax = c(i,j)
                             TIMEOUT_occurred = True #한 step만에 goal을 찾은 경우 더 이상 탐색하지 않음. 이를 위해 TIMEOUT_occurred 이용
                             break
-                        if v == TIMEOUT:
+                        if h_minimax == TIMEOUT:
                             TIMEOUT_occurred = True #Timeout이 발생한 경우: 탐색을 취소하고 그전 단계의 결과 리턴
                             break
                         elif cutoff: #cutoff가 발생했는지 확인. 모든 경우의 수를 완전히 탐색했을 경우 발생하지 않음.
                             cutoff_occurred = True
-                        if v > max_t:
-                            max_t = v
+                        if h_minimax >= v:
+                            v = h_minimax
                             argmax = c(i,j)
-                        if v >= b:
-                            last_argmax = c(i,j)
-                            TIMEOUT_occurred = True #베타 가지치기. TIMEOUT_occurred 이용
+                    else:
+                        print(draw_cell(Board.check(c(i,j))) + ' ', end='')
+            print()
+                            # print(f"Best node update: {argmax}")
+                        # if v >= b:
+                        #     last_argmax = c(i,j)
+                        #     TIMEOUT_occurred = True #베타 가지치기. TIMEOUT_occurred 이용
 
         if TIMEOUT_occurred:
             print(f"Cutoff by timeout. Previous depth result: {last_argmax}")
             return last_argmax
-        print(f"Depth{depth_limit} search result: recommend {argmax}, eval_func: {max_t}")
+        print(f"Depth{depth_limit} search result: recommend {argmax}, eval_func: {v}")
         last_argmax = argmax
         if not cutoff_occurred:
             print(f"Completely searched in this depth limit: {depth_limit}. No cutoff found.")
             break
-    if not is_available_pos:
-        print("GAME END! There is no available position.")
-        print("press any key to quit..")
-        input()
-        sys.exit()
+        if not is_available_pos: #depth
+            print("GAME END! There is no available position.")
+            print("press any key to quit..")
+            input()
+            sys.exit()
     return argmax
 
-TIME_LIMIT = 9999#int(input("set AI's turn time limit (second): "))
+TIME_LIMIT = 99#int(input("set AI's turn time limit (second): "))
 player_turn = 1#1 for black(play  first), -1 for white
 while True:
     who_is_player = int(input("Choose player to play first (1 = you, 0 = computer): "))
@@ -708,17 +739,6 @@ who_is_player = ('computer', 'you')[who_is_player]
 #     [0, 0, 1, 1, -1, -1, 0, 0],
 #     [0, 0, 0, 0, 0, 0, 0, 0],
 # ]
-Board.create_board_from_txt("""
- 0 1 2 3 4 5 6 7
-0┼ ┼ ┼ ┼ ┼ ● ┼ ●
-1┼ ┼ ┼ ┼ ○ ○ ○ ┼
-2○ ● ● ● ● ○ ┼ ┼
-3┼ ○ ○ ● ○ ○ ● ○
-4┼ ● ○ ○ ○ ○ ● ┼
-5┼ ┼ ● ● ○ ● ┼ ┼
-6┼ ┼ ┼ ┼ ● ┼ ┼ ┼
-7┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ """)
-print_board()
 
 # Board.update_allowable_pos_board()
 # print(Board.is_acceptable(c(6,3),1))
@@ -782,7 +802,7 @@ while True:
     if next_move is not None:
         goal_test = Board.goal_test_pos(next_move)
         if goal_test != False:
-            print(f"{('Black','White')[(goal_test+1)//2]} win!")
+            print(f"{('Black','White')[player_index(goal_test)]} win!")
             break
     if who_is_player == 'you':
         next_move = get_input()
