@@ -13,7 +13,7 @@ from pprint import pprint
 
 import sys
 
-SIZE = 11
+SIZE = 19
 LENGTH = 5
 TIMEOUT = 'x' #Constant
 
@@ -179,7 +179,7 @@ class Board:
         # return True
 
     @staticmethod
-    def update_allowable_pos_board(): #False is not allowable for both. 1/-1 is allowable for black/white respectively. True is allowable for both.
+    def get_allowable_pos_board():#False is not allowable for both. 1/-1 is allowable for black/white respectively. True is allowable for both.
         for i in range(SIZE):
             for j in range(SIZE):
                 if Board.is_empty(c(i,j)):
@@ -191,12 +191,10 @@ class Board:
                         Board.bs[i][j] = 1
                     elif b:
                         Board.bs[i][j] = -1
+                    else:
+                        Board.bs[i][j] = False
                 else:
                     Board.bs[i][j] = False
-
-
-    @staticmethod
-    def get_allowable_pos_board():
         return Board.bs
 
     @staticmethod
@@ -636,10 +634,10 @@ def ai_async_wrapper(allowable_board, player_turn, TIME_LIMIT):
 async def ai(allowable_board, player_turn, loop, end_time):
     INF = 999999999
     argmax = c(0, 0)
-    for depth_limit in range(0, 1, +1): #iterative deepening
+    last_argmax = c(0, 0)
+    for depth_limit in range(0, 3, +1): #iterative deepening
         is_available_pos = False
         argmax = c(0, 0)
-        last_argmax = c(0, 0)
         v = -INF
         a = -INF
         b = INF #v, a, b를 매 depth마다 초기화해줘야 이전 탐색이 영향을 안 줌!!
@@ -650,14 +648,12 @@ async def ai(allowable_board, player_turn, loop, end_time):
             for j in range(SIZE):
                 if not TIMEOUT_occurred:
                     is_pos_worth_check = False
-                    if allowable_board[i][j] == player_turn:
-                        is_pos_worth_check = True
-                    elif allowable_board[i][j] == True:
+                    if allowable_board[i][j] == True or allowable_board[i][j] == player_turn:
                         for __i in range(-2,3):
                             for __j in range(-2,3):
                                 ii = i + __i
                                 jj = j + __j
-                                if ii >= 0 and ii < SIZE and jj >= 0 and jj < SIZE and allowable_board[i+__i][j+__j] == False:
+                                if ii >= 0 and ii < SIZE and jj >= 0 and jj < SIZE and Board.check(c(ii,jj)) != 0:
                                     is_pos_worth_check = True
                                     break
                     if is_pos_worth_check:
@@ -666,7 +662,8 @@ async def ai(allowable_board, player_turn, loop, end_time):
                         child.input(c(i,j), player_turn)
                         #child.update_evaluation_func(c(i,j))
                         cutoff, h_minimax = heuristic_minimax(child, c(i,j), a, b, -player_turn, player_turn, depth_limit, loop, end_time, depth_limit)
-                        print(str(int(h_minimax)) + ' ', end = '')
+                        if not h_minimax == 'x':
+                            print(str(int(h_minimax)) + ' ', end = '')
                         # print(f"{c(i,j)}, v:{v}")
                         if h_minimax == INF and depth_limit == 0:
                             last_argmax = c(i,j)
@@ -683,11 +680,6 @@ async def ai(allowable_board, player_turn, loop, end_time):
                     else:
                         print(draw_cell(Board.check(c(i,j))) + ' ', end='')
             print()
-                            # print(f"Best node update: {argmax}")
-                        # if v >= b:
-                        #     last_argmax = c(i,j)
-                        #     TIMEOUT_occurred = True #베타 가지치기. TIMEOUT_occurred 이용
-
         if TIMEOUT_occurred:
             print(f"Cutoff by timeout. Previous depth result: {last_argmax}")
             return last_argmax
@@ -703,7 +695,7 @@ async def ai(allowable_board, player_turn, loop, end_time):
             sys.exit()
     return argmax
 
-TIME_LIMIT = 99#int(input("set AI's turn time limit (second): "))
+TIME_LIMIT = 20#int(input("set AI's turn time limit (second): "))
 player_turn = 1#1 for black(play  first), -1 for white
 while True:
     who_is_player = int(input("Choose player to play first (1 = you, 0 = computer): "))
@@ -795,8 +787,8 @@ who_is_player = ('computer', 'you')[who_is_player]
 # 6┼ ┼ ┼ ┼ ● ● ┼ ┼
 # 7┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ 여기서는 금수까지둠 63 (33금수) 이건 allowable_board에서 제대로 테스트 안해서 그런듯. 이것 먼저 해결하자. => 해결!
 
-
 next_move = None
+is_first_move = True
 while True:
     print_board()
     if next_move is not None:
@@ -812,22 +804,25 @@ while True:
         while not Board.is_empty(next_move):
             print("Invalid user movement. There is a stone already. Try another.")
             next_move = get_input()
-        # while not Board.is_acceptable(next_move, player_turn):
-        #     print("Invalid user movement. Violated 33 or 44 rule. Only 43 is permitted. Try another.")
-        #     next_move = get_input()
+        while not Board.is_acceptable(next_move, player_turn):
+            print("Invalid user movement. Violated 33 rule. Try another.")
+            next_move = get_input()
         Board.update_board(next_move, player_turn)
         who_is_player = 'computer'
         player_turn = -player_turn
+        is_first_move = False
     elif who_is_player == 'computer':
-        Board.update_allowable_pos_board()
-        ab = Board.get_allowable_pos_board()
-        next_move = ai_async_wrapper(ab, player_turn, TIME_LIMIT)
-        while not Board.is_empty(next_move):
-            print(f"{next_move} Invalid computer movement. Stone already exists. Retrying..")
-            next_move = ai_async_wrapper(ab, player_turn, TIME_LIMIT)
-        # while not Board.is_acceptable(next_move, player_turn):
-        #     print(f"{next_move} Invalid computer movement. Unacceptable. Retrying..")
-        #     next_move = ai(ab, player_turn)
+        if is_first_move:
+            next_move = c(SIZE//2,SIZE//2)
+            is_first_move = False
+        else:
+            next_move = ai_async_wrapper(Board.get_allowable_pos_board(), player_turn, TIME_LIMIT)
+            while not Board.is_empty(next_move):
+                print(f"{next_move} Invalid computer movement. Stone already exists. Retrying..")
+                next_move = ai_async_wrapper(Board.get_allowable_pos_board(), player_turn, TIME_LIMIT)
+            while not Board.is_acceptable(next_move, player_turn):
+                print(f"{next_move} Invalid computer movement. Unacceptable. Retrying..")
+                next_move = ai_async_wrapper(Board.get_allowable_pos_board(), player_turn, TIME_LIMIT)
         Board.update_board(next_move, player_turn)
         player_turn = -player_turn
         who_is_player = 'you'
