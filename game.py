@@ -13,6 +13,8 @@ from pprint import pprint
 
 import sys
 
+import time
+
 SIZE = 19
 LENGTH = 5
 TIMEOUT = 'x' #Constant
@@ -121,13 +123,6 @@ class Board:
                 continue
             for j, toward in enumerate((direction, -direction)):
                 check_spot = check_spots[j]
-                assert Board.is_move_inside_board(check_spot)
-                # if not Board.is_move_inside_board(check_spot): #후보 자리 자체가 판 밖에 있는 경우 -> 한쪽이 막혀 있어서 열린n 불가능
-                #     break
-                assert Board.check(check_spot) != -player_turn
-                # if Board.check(check_spot) == -player_turn:
-                #     print(f"check_spot {check_spot} is already placed")
-                #     break
                 temp = check_spot
                 assert Board.check(temp) == 0
                 Board.input(temp, player_turn)
@@ -137,6 +132,7 @@ class Board:
                     check_spot = check_spot + toward
                     if (not Board.is_move_inside_board(check_spot)) or Board.check(check_spot) == -player_turn:
                         # print(f"\t\t\tblocked: {check_spots[j]}, len_more: {len_more}")
+                        is_blocked = True
                         Board.input(temp, 0)
                         break
                     elif Board.check(check_spot) == 0:
@@ -146,7 +142,8 @@ class Board:
                     else:
                         # print(f"\t\t\tcheck spot++: {check_spots[j]}, len_more: {len_more}")
                         len_more += 1
-                len_max = max(len_max, len[0] + len[1] - 1 + len_more)
+                if not is_blocked:
+                    len_max = max(len_max, len[0] + len[1] - 1 + len_more)
                 # print(f"\t\tlen: {len[0] + len[1] - 1 + len_more}, len_max: {len_max}")
                 Board.input(temp,0)
             len_max_dir[i] = len_max - 1 #방향별 열린 'n'에 대해 'n-1' 저장 (열린4 -> 3)
@@ -501,8 +498,8 @@ class Node:
                             halfblocked_len_count[len] += 1
                         else:
                             assert True
-                    # print(f"\tlen_count:             {len_count}")
-                    # print(f"\thalfblocked_len_count: {halfblocked_len_count}")
+                    # print(f"\t{move} len_count:             {len_count}")
+                    # print(f"\t{move} halfblocked_len_count: {halfblocked_len_count}")
                     #절대치 기준: 5 > 열린4 > 닫힌4 > 열린3 > 닫힌 3 > ...
                     if len_count[4] >= 2:
                         # print("\t44")
@@ -514,7 +511,7 @@ class Node:
                         # print("\t4")
                         score[player_index(player_pos)] += INF//36
                     elif halfblocked_len_count[4] >= 1:
-                        score[player_index(player_pos)] += INF//38
+                        score[player_index(player_pos)] += INF//128
                     elif len_count[3] >= 2:
                         # print("\t33")
                         # print(f"33 detected: {move}")
@@ -522,7 +519,7 @@ class Node:
                     elif len_count[3] == 1:
                         # print("3")
                         # print("3발견!")
-                        score[player_index(player_pos)] += INF//128
+                        score[player_index(player_pos)] += INF//512
 
                     for i, _len in enumerate(len_max_dir):
                         if _len > 0:
@@ -547,7 +544,6 @@ class Node:
         return score[player_index(player_now)] - score[player_index(-player_now)] * 1.5#나의 이득이 우선. 이득이 비슷하면 상대의 점수를 낮추는 수가 더 좋음.
     #def is_acceptable
 
-@memoize #loop, limit 고려안하도록.
 def heuristic_minimax(state, last_input, a, b, player_turn_in_state, player_now, limit, loop, end_time, depth_limit): #returns utility 값 / heuristic 값
     indent = '\t' * (depth_limit - limit + 1)
     # print(f"{indent}heuristic_minimax(depth:{depth_limit-limit}, last_input: {last_input}, alpha: {a}, beta: {b}, player: {player_turn_in_state}, limit: {limit})")
@@ -627,15 +623,17 @@ def heuristic_minimax(state, last_input, a, b, player_turn_in_state, player_now,
 def ai_async_wrapper(allowable_board, player_turn, TIME_LIMIT):
     loop = asyncio.get_event_loop()
     end_time = loop.time() + TIME_LIMIT
+    start_time = time.time()
     task = ai(allowable_board, player_turn, loop, end_time),
     result, = loop.run_until_complete(asyncio.gather(*task))
+    print(f"time: {time.time() - start_time}")
     return result
 
 async def ai(allowable_board, player_turn, loop, end_time):
     INF = 999999999
     argmax = c(0, 0)
     last_argmax = c(0, 0)
-    for depth_limit in range(0, 3, +1): #iterative deepening
+    for depth_limit in range(0, MAX_DEPTH_LIMIT, +1): #iterative deepening
         is_available_pos = False
         argmax = c(0, 0)
         v = -INF
@@ -695,7 +693,68 @@ async def ai(allowable_board, player_turn, loop, end_time):
             sys.exit()
     return argmax
 
-TIME_LIMIT = 20#int(input("set AI's turn time limit (second): "))
+# Board.create_board_from_txt("""
+#  0 1 2 3 4 5 6 7 8 9 A B C D E
+# 0┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼
+# 1┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ● ┼ ┼ ┼ ┼
+# 2┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ● ┼ ┼ ┼ ┼ ┼
+# 3┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ● ┼ ┼ ┼ ┼ ┼ ┼
+# 4┼ ┼ ┼ ┼ ┼ ┼ ┼ ● ○ ● ● ● ┼ ┼ ┼
+# 5┼ ┼ ┼ ┼ ┼ ┼ ○ ┼ ○ ● ○ ┼ ┼ ┼ ┼
+# 6┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ● ○ ┼ ┼ ┼ ┼ ┼
+# 7┼ ┼ ┼ ┼ ┼ ┼ ┼ ○ ○ ┼ ● ┼ ┼ ┼ ┼
+# 8┼ ┼ ┼ ┼ ┼ ┼ ┼ ● ┼ ┼ ┼ ○ ┼ ┼ ┼
+# 9┼ ┼ ┼ ┼ ┼ ┼ ○ ┼ ┼ ┼ ┼ ┼ ○ ┼ ┼
+# A┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼
+# B┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼
+# C┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼
+# D┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼
+# E┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ """, reverse_value=-1)
+# n = Node(Board.b)
+# n.print_board()
+# print(n.get_evaluation_function(1))
+# Board.create_board_from_txt("""
+#  0 1 2 3 4 5 6 7 8 9 A B C D E
+# 0┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼
+# 1┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼
+# 2┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ● ┼ ┼ ┼ ┼ ┼
+# 3┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ● ┼ ┼ ┼ ┼ ┼ ┼
+# 4┼ ┼ ┼ ┼ ┼ ┼ ┼ ● ○ ● ● ● ┼ ┼ ┼
+# 5┼ ┼ ┼ ┼ ┼ ┼ ● ┼ ○ ● ○ ┼ ┼ ┼ ┼
+# 6┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ● ○ ┼ ┼ ┼ ┼ ┼
+# 7┼ ┼ ┼ ┼ ┼ ┼ ○ ○ ○ ┼ ● ┼ ┼ ┼ ┼
+# 8┼ ┼ ┼ ┼ ┼ ┼ ┼ ● ┼ ┼ ┼ ○ ┼ ┼ ┼
+# 9┼ ┼ ┼ ┼ ┼ ┼ ○ ┼ ┼ ┼ ┼ ┼ ○ ┼ ┼
+# A┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼
+# B┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼
+# C┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼
+# D┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼
+# E┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ """, reverse_value=-1)
+# n = Node(Board.b)
+# n.print_board()
+# print(n.get_evaluation_function(1))
+# raise Exception
+
+# Board.create_board_from_txt("""
+#  0 1 2 3 4 5 6 7 8 9 A B C D E
+# 0┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼
+# 1┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼
+# 2┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ● ┼ ┼ ┼ ┼ ┼
+# 3┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ● ┼ ┼ ┼ ┼ ┼ ┼
+# 4┼ ┼ ┼ ┼ ┼ ┼ ┼ ● ○ ● ● ● ┼ ┼ ┼
+# 5┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ○ ● ○ ┼ ┼ ┼ ┼
+# 6┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ● ○ ┼ ┼ ┼ ┼ ┼
+# 7┼ ┼ ┼ ┼ ┼ ┼ ┼ ○ ○ ┼ ● ┼ ┼ ┼ ┼
+# 8┼ ┼ ┼ ┼ ┼ ┼ ┼ ● ┼ ┼ ┼ ○ ┼ ┼ ┼
+# 9┼ ┼ ┼ ┼ ┼ ┼ ○ ┼ ┼ ┼ ┼ ┼ ○ ┼ ┼
+# A┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼
+# B┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼
+# C┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼
+# D┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼
+# E┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ """, reverse_value=-1) #depth 1 (2단계 탐색)에서도 탐색 못함.
+
+TIME_LIMIT = 99#int(input("set AI's turn time limit (second): "))
+MAX_DEPTH_LIMIT = 3
 player_turn = 1#1 for black(play  first), -1 for white
 while True:
     who_is_player = int(input("Choose player to play first (1 = you, 0 = computer): "))
@@ -788,7 +847,7 @@ who_is_player = ('computer', 'you')[who_is_player]
 # 7┼ ┼ ┼ ┼ ┼ ┼ ┼ ┼ 여기서는 금수까지둠 63 (33금수) 이건 allowable_board에서 제대로 테스트 안해서 그런듯. 이것 먼저 해결하자. => 해결!
 
 next_move = None
-is_first_move = True
+is_first_move = True #release 수정
 while True:
     print_board()
     if next_move is not None:
